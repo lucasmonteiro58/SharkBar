@@ -37,16 +37,31 @@ struct Hotkey: Codable, Equatable {
     var display: String
 }
 
-enum BatteryStyle: String, Codable, CaseIterable, Identifiable {
-    case capsule, ring, bars, number
+/// Como a bateria aparece: sempre um símbolo só por aparelho, com o nível embutido.
+enum BatteryStyle: String, CaseIterable, Identifiable, Codable {
+    case ring, fill, pill, number
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .capsule: "Pilha"
         case .ring: "Anel"
-        case .bars: "Barras"
-        case .number: "Número"
+        case .fill: "Ícone preenchido"
+        case .pill: "Pílula"
+        case .number: "Ícone + número"
         }
+    }
+    var subtitle: String {
+        switch self {
+        case .ring: "O ícone fica dentro de um anel que fecha conforme a carga"
+        case .fill: "O próprio desenho do aparelho enche de baixo para cima"
+        case .pill: "Cápsula preenchida pela carga, com o ícone dentro"
+        case .number: "Ícone e a porcentagem ao lado"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        // Estilos antigos: "capsule" (pilha) e "bars" viram pílula e anel.
+        self = BatteryStyle(rawValue: raw) ?? (raw == "capsule" ? .pill : .ring)
     }
 }
 
@@ -63,32 +78,52 @@ enum BarColorMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum BarIconMode: String, Codable, CaseIterable, Identifiable {
-    case device, fin, initials, none
+/// O que vai dentro do símbolo de cada aparelho.
+enum BarIconMode: String, CaseIterable, Identifiable, Codable {
+    case device, initials
     var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .device: "Desenho do aparelho"
-        case .fin: "Barbatana"
-        case .initials: "Siglas"
-        case .none: "Sem ícone"
-        }
+    var title: String { self == .device ? "Desenho do aparelho" : "Siglas (BS / X6)" }
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = raw == "initials" ? .initials : .device   // "fin"/"none" antigos → desenho
     }
 }
 
 /// Aparência do item na barra de menu.
 struct MenuBarLook: Codable, Equatable {
-    var battery: BatteryStyle = .number
+    var battery: BatteryStyle = .ring
     var color: BarColorMode = .monochrome
     var icons: BarIconMode = .device
     var headsetSymbol = "headphones"
     var mouseSymbol = "computermouse"
     var headsetColor = RGB(r: 64, g: 158, b: 255)
     var mouseColor = RGB(r: 158, g: 115, b: 255)
-    var showPercent = true
+    /// Porcentagem ao lado do símbolo (no estilo "Ícone + número" ela sempre aparece).
+    var showPercent = false
+    /// Barbatana do SharkBar no começo do item.
+    var showFin = false
 
-    static let headsetSymbols = ["headphones", "headphones.circle", "headphones.circle.fill", "airpods.max", "beats.headphones", "ear", "waveform"]
+    static let headsetSymbols = ["headphones", "airpods.max", "beats.headphones", "headphones.dots", "ear", "waveform", "music.note"]
     static let mouseSymbols = ["computermouse", "computermouse.fill", "magicmouse", "magicmouse.fill", "cursorarrow", "cursorarrow.rays", "scope"]
+
+    init() {}
+
+    /// Tolerante a campos faltando ou de versões anteriores (para não zerar os ajustes).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = MenuBarLook()
+        battery = (try? c.decodeIfPresent(BatteryStyle.self, forKey: .battery)) ?? d.battery
+        color = (try? c.decodeIfPresent(BarColorMode.self, forKey: .color)) ?? d.color
+        let rawIcons = (try? c.decodeIfPresent(String.self, forKey: .icons)) ?? "device"
+        icons = rawIcons == "initials" ? .initials : .device
+        headsetSymbol = (try? c.decodeIfPresent(String.self, forKey: .headsetSymbol)) ?? d.headsetSymbol
+        mouseSymbol = (try? c.decodeIfPresent(String.self, forKey: .mouseSymbol)) ?? d.mouseSymbol
+        headsetColor = (try? c.decodeIfPresent(RGB.self, forKey: .headsetColor)) ?? d.headsetColor
+        mouseColor = (try? c.decodeIfPresent(RGB.self, forKey: .mouseColor)) ?? d.mouseColor
+        showPercent = (try? c.decodeIfPresent(Bool.self, forKey: .showPercent)) ?? d.showPercent
+        showFin = (try? c.decodeIfPresent(Bool.self, forKey: .showFin)) ?? (rawIcons == "fin")
+    }
 }
 
 struct SettingsData: Codable, Equatable {

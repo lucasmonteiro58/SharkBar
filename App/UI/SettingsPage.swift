@@ -76,9 +76,10 @@ private struct MenuBarAppearanceCard: View {
                 }
                 option("Bateria") {
                     ForEach(BatteryStyle.allCases) { b in
-                        OptionPill(title: b.title, symbol: symbol(for: b), selected: l.battery == b) { look.wrappedValue.battery = b }
+                        StyleTile(style: b, selected: l.battery == b, look: l) { look.wrappedValue.battery = b }
                     }
                 }
+                Text(l.battery.subtitle).font(.caption).foregroundStyle(.secondary).padding(.leading, 88)
                 option("Cor") {
                     ForEach(BarColorMode.allCases) { c in
                         OptionPill(title: c.title, selected: l.color == c) { look.wrappedValue.color = c }
@@ -103,13 +104,15 @@ private struct MenuBarAppearanceCard: View {
                     symbolRow("Fone", symbols: MenuBarLook.headsetSymbols, selected: l.headsetSymbol) { look.wrappedValue.headsetSymbol = $0 }
                     symbolRow("Mouse", symbols: MenuBarLook.mouseSymbols, selected: l.mouseSymbol) { look.wrappedValue.mouseSymbol = $0 }
                 }
-                Toggle("Mostrar porcentagem", isOn: Binding(get: { l.showPercent && model.settings.data.menuBarStyle != .iconsOnly },
-                                                          set: {
+                Toggle("Mostrar a porcentagem ao lado", isOn: Binding(get: { l.showPercent || l.battery == .number },
+                                                                    set: {
                     look.wrappedValue.showPercent = $0
                     if model.settings.data.menuBarStyle == .iconsOnly { model.settings.data.menuBarStyle = .full }
                 }))
                 .toggleStyle(.switch)
                 .disabled(l.battery == .number)
+                Toggle("Barbatana do SharkBar no começo", isOn: Binding(get: { l.showFin }, set: { look.wrappedValue.showFin = $0 }))
+                    .toggleStyle(.switch)
 
                 Text("Usa Hidden Bar, Bartender ou Ice? Segure ⌘ e arraste o ícone do \(Brand.name) para a área sempre visível.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -117,14 +120,6 @@ private struct MenuBarAppearanceCard: View {
         }
     }
 
-    private func symbol(for b: BatteryStyle) -> String {
-        switch b {
-        case .capsule: "battery.75percent"
-        case .ring: "circle.dashed"
-        case .bars: "chart.bar.fill"
-        case .number: "percent"
-        }
-    }
 
     private func option<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
         HStack(spacing: 8) {
@@ -166,5 +161,35 @@ private struct MenuBarAppearanceCard: View {
         .frame(height: 44)
         .background(dark ? Color(white: 0.12) : Color(white: 0.93), in: RoundedRectangle(cornerRadius: 10))
         .environment(\.colorScheme, dark ? .dark : .light)
+    }
+}
+
+/// Botão de estilo com a própria pré-via do símbolo (fone a 70%).
+private struct StyleTile: View {
+    let style: BatteryStyle
+    let selected: Bool
+    let look: MenuBarLook
+    let action: () -> Void
+
+    var body: some View {
+        var sample = look
+        sample.battery = style
+        sample.showPercent = false
+        sample.showFin = false
+        var h = HeadsetSnapshot.placeholder
+        h.battery = 70
+        return Button(action: action) {
+            VStack(spacing: 6) {
+                MenuBarContent(headset: h, mouse: .placeholder, style: .headsetOnly, look: sample, foreground: .primary)
+                    .scaleEffect(1.3)
+                    .frame(height: 26)
+                Text(style.title).font(.system(size: 11, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(selected ? Theme.accent.opacity(0.22) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(selected ? Theme.accent : .clear, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
     }
 }

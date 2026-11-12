@@ -15,15 +15,20 @@ final class MouseController: ObservableObject {
     @Published private(set) var busy = false
 
     private let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-    private var device: IOHIDDevice?
-    /// 0xFA60 = dongle 2.4 GHz; outro PID do mesmo fabricante = mouse no cabo USB.
-    private var productID = 0
-    private var wiredLink: DeviceLink { productID == AttackShark.productID ? .dongle : .usb }
-    private let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
+    /// Todos os aparelhos que casam (dongle 1d57:fa60 e, se houver, o mouse no cabo com outro PID),
+    /// cada um com seu buffer de leitura — assim o dongle continua sendo ouvido com o cabo ligado.
+    private var devices: [(dev: IOHIDDevice, pid: Int, buffer: UnsafeMutablePointer<UInt8>)] = []
+    /// Aparelho usado para enviar configurações: prefere o cabo.
+    private var device: IOHIDDevice? { (devices.first { $0.pid != AttackShark.productID } ?? devices.first)?.dev }
+    private var hasCable: Bool { devices.contains { $0.pid != AttackShark.productID } }
+    private var hasDongle: Bool { devices.contains { $0.pid == AttackShark.productID } }
     private var ackWaiter: (id: UInt8, cont: CheckedContinuation<Void, Error>)?
+    /// Último heartbeat dizendo que o mouse está ligado.
     private var lastHeartbeat = Date.distantPast
     private var watchdog: Task<Void, Never>?
     private var writeTail: Task<Void, Never>?
+    /// Quanto tempo sem sinal até considerar o mouse desligado (evita piscar durante trocas).
+    private static let offlineGrace: TimeInterval = 8
 
     private static let configKey = "mouseConfig.v1"
     private static let syncedKey = "mouseConfig.synced"
@@ -37,22 +42,8 @@ final class MouseController: ObservableObject {
         publish() // não deixa o widget com o estado da execução anterior
         watchdog = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(5))
-                guard let self else { return }
-                let wired = self.device != nil && self.productID != AttackShark.productID
-                let viaDongle = wired || (self.snapshot.link == .dongle && Date.now.timeIntervalSince(self.lastHeartbeat) < 10)
-                var link: DeviceLink = viaDongle ? self.wiredLink : .none
-                var battery = self.snapshot.battery
-                if !viaDongle {
-                    let bt = BluetoothWatcher.status(matching: ["X6", "Attack Shark"])
-                    if bt.connected { link = .bluetooth; battery = bt.battery }
-                }
-                if link != self.snapshot.link || battery != self.snapshot.battery {
-                    self.snapshot.link = link
-                    self.snapshot.connected = link != .none
-                    self.snapshot.battery = battery
-                    self.publish()
-                }
+                try? await Task.sleep(for: .seconds(3))
+                self?.updateLink(checkBluetooth: true)
             }
         }
     }
@@ -61,10 +52,33 @@ final class MouseController: ObservableObject {
         if let data = try? JSONEncoder().encode(config) { UserDefaults.standard.set(data, forKey: Self.configKey) }
     }
 
+    /// Decide a conexão: cabo > dongle com heartbeat recente > Bluetooth > nenhuma.
+    private func updateLink(checkBluetooth: Bool = false) {
+        var link: DeviceLink = .none
+        var battery = snapshot.battery
+        if hasCable {
+            link = .usb
+        } else if hasDongle, Date.now.timeIntervalSince(lastHeartbeat) < Self.offlineGrace {
+            link = .dongle
+        } else if checkBluetooth {
+            let bt = BluetoothWatcher.status(matching: ["X6", "Attack Shark"])
+            if bt.connected { link = .bluetooth; battery = bt.battery ?? battery }
+        } else if snapshot.link == .bluetooth {
+            link = .bluetooth
+        }
+        dongleConnected = !devices.isEmpty
+        if link != snapshot.link || battery != snapshot.battery || snapshot.connected != (link != .none) {
+            snapshot.link = link
+            snapshot.connected = link != .none
+            snapshot.battery = battery
+            publish()
+        }
+    }
+
     // MARK: - HID
 
     private func start() {
-        // Sem filtrar o PID: o dongle é 1d57:fa60; no cabo o X6 aparece com outro PID do mesmo fabricante.
+        // Sem filtrar o PID: o dongle é 1d57:fa60; no cabo o X6 pode aparecer com outro PID do mesmo fabricante.
         IOHIDManagerSetDeviceMatching(manager, [
             kIOHIDVendorIDKey: AttackShark.vendorID,
             kIOHIDPrimaryUsagePageKey: AttackShark.configUsagePage,
@@ -84,56 +98,44 @@ final class MouseController: ObservableObject {
     }
 
     private func attach(_ dev: IOHIDDevice) {
+        guard !devices.contains(where: { $0.dev == dev }) else { return }
         let pid = IOHIDDeviceGetProperty(dev, kIOHIDProductIDKey as CFString) as? Int ?? 0
-        // Prefere o cabo quando os dois estão presentes (o cabo também carrega o mouse).
-        if device != nil, !(productID == AttackShark.productID && pid != AttackShark.productID) { return }
-        device = dev
-        productID = pid
-        dongleConnected = true
-        if pid != AttackShark.productID {
-            snapshot.link = .usb
-            snapshot.connected = true
-            lastHeartbeat = .now
-            publish()
-        }
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
+        devices.append((dev, pid, buffer))
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(dev, buffer, 512, { ctx, _, _, _, _, report, length in
             let me = Unmanaged<MouseController>.fromOpaque(ctx!).takeUnretainedValue()
             let bytes = Array(UnsafeBufferPointer(start: report, count: length))
             MainActor.assumeIsolated { me.received(bytes) }
         }, ctx)
-        snapshot.pollingHz = config.pollingHz
-        snapshot.stage = config.activeStage
-        snapshot.dpi = config.activeDPI
+        updateLink()
     }
 
     private func detach(_ dev: IOHIDDevice) {
-        guard dev == device else { return }
-        device = nil
-        dongleConnected = false
-        snapshot.connected = false
-        snapshot.link = DeviceLink.none
-        if let w = ackWaiter { ackWaiter = nil; w.cont.resume(throwing: HeadsetError.notConnected) }
-        publish()
+        guard let i = devices.firstIndex(where: { $0.dev == dev }) else { return }
+        let wasActive = device == dev
+        devices[i].buffer.deallocate()
+        devices.remove(at: i)
+        if wasActive, let w = ackWaiter { ackWaiter = nil; w.cont.resume(throwing: HeadsetError.notConnected) }
+        // Se o cabo saiu e o dongle está aí, dá um tempo para o mouse voltar ao sem fio.
+        if hasDongle && !hasCable { lastHeartbeat = .now }
+        updateLink()
     }
 
     private func received(_ bytes: [UInt8]) {
         guard let event = AttackShark.parse(bytes) else { return }
         switch event {
         case .heartbeat(let battery, let online):
-            if online { lastHeartbeat = .now }
-            let link: DeviceLink = online ? wiredLink : snapshot.link == .bluetooth ? .bluetooth : .none
-            let changed = (online && snapshot.battery != battery) || snapshot.link != link
-            snapshot.link = link
-            snapshot.connected = link != .none
-            if online { snapshot.battery = battery }
-            if changed { publish() }
+            // Heartbeat "offline" não derruba na hora: o watchdog só marca desligado após `offlineGrace`.
+            if online {
+                lastHeartbeat = .now
+                if snapshot.battery != battery { snapshot.battery = battery; publish() }
+            }
+            updateLink()
         case .stageButton(let stage):
             // Botão de DPI físico no mouse.
             if config.stages.indices.contains(stage) {
                 config.activeStage = stage
-                snapshot.stage = stage
-                snapshot.dpi = config.activeDPI
                 publish()
             }
         case .ack(let id):

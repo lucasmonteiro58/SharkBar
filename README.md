@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/lucasmonteiro58/Fone?label=download&color=2ea44f" alt="Download"></a>
+  <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/lucasmonteiro58/SharkBar?label=download&color=2ea44f" alt="Download"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple" alt="macOS 14+">
   <img src="https://img.shields.io/badge/Apple%20Silicon%20%2B%20Intel-universal-blue" alt="Universal">
   <img src="https://img.shields.io/badge/license-MIT-lightgrey" alt="MIT">

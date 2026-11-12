@@ -13,6 +13,7 @@ struct PopoverView: View {
         }
         .padding(12)
         .frame(width: 400)
+        .background(Theme.windowBackground)
     }
 
     private func open(_ page: Page? = nil) {

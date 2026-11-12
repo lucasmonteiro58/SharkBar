@@ -7,6 +7,13 @@ enum Theme {
     static let headsetTint = Color(red: 0.25, green: 0.62, blue: 1.0)
     static let mouseTint = Color(red: 0.62, green: 0.45, blue: 1.0)
 
+    /// Fundos opacos que acompanham claro/escuro.
+    static let windowBackground = Color(nsColor: .windowBackgroundColor)
+    static let cardBackground = Color(nsColor: NSColor(name: nil) { a in
+        a.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.17, alpha: 1) : NSColor(white: 1, alpha: 1)
+    })
+
     static func batteryColor(_ level: Int?, charging: Bool = false) -> Color {
         guard let l = level else { return .gray }
         if charging { return accent }
@@ -23,7 +30,8 @@ struct Card<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.secondary.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            // Opaco: no popover translúcido, um fundo claro atrás apagava os textos.
+            .background(Theme.cardBackground, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.separator.opacity(0.5)))
     }
 }
@@ -87,7 +95,8 @@ struct Chip: View {
         .font(.system(size: 10, weight: .semibold))
         .padding(.horizontal, 7).padding(.vertical, 3)
         .foregroundStyle(color)
-        .background(color.opacity(0.14), in: Capsule())
+        .background(color.opacity(0.18), in: Capsule())
+        .overlay(Capsule().strokeBorder(color.opacity(0.25), lineWidth: 0.5))
     }
 }
 

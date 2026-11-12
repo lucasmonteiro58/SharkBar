@@ -29,7 +29,7 @@
 - **Mute sincronizado**: a chave do fone também muta a entrada do Mac.
 - **Biblioteca de EQ** com presets (FPS, Graves, Voz, Música, Cinema…), salvar, exportar e importar.
 - **Botões do mouse** remapeáveis e **macros de teclado** (experimental).
-- **Barra de menu configurável**: bateria em pilha, anel, barras ou número; cores monocromáticas, pelo nível, por aparelho ou verde-água; ícone do aparelho (7 desenhos cada), barbatana, siglas ou nenhum.
+- **Barra de menu configurável**: um símbolo por aparelho com a bateria embutida — anel com o ícone dentro, ícone que enche, pílula ou ícone + número; cores monocromáticas, pelo nível, por aparelho ou verde-água; 7 desenhos de fone e de mouse ou siglas; selos de carregando e mic mutado.
 
 ## ✨ O que faz
 

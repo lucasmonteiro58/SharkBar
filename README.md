@@ -46,8 +46,20 @@ Um clique abre um painel com os controles rápidos.
 | 💡 Iluminação | desligada, fixa, respirando, cor do DPI; velocidade e cor |
 | 😴 Energia | tempo para dormir, sono profundo, debounce |
 
+### 🧩 Widgets de mesa
+| Widget | Tamanhos | O que tem |
+|---|---|---|
+| **Fone & Mouse** | P · M · G | bateria dos dois; o grande traz botões de ANC, DPI e polling |
+| **BlackShark V3 Pro** | P · M | bateria, modo de áudio e botões Off / ANC / Ambiente |
+| **Attack Shark X6** | P · M | bateria, botões de estágio de DPI e de polling rate |
+
+Os botões funcionam direto no widget — sem abrir o app.
+
+### 🎛️ Central de Controle (macOS 26+)
+Em **Central de Controle › Editar Controles** aparecem: *Modo de áudio do fone*, *Cancelamento de ruído*,
+*Modo ambiente*, *DPI do mouse* e *Bateria do fone e mouse*. Dá para colocá-los também na barra de menu.
+
 ### Também
-- **Widget** de mesa (pequeno e médio) com a bateria dos dois.
 - Detecta se cada aparelho está no **dongle 2.4 GHz**, no **cabo USB** ou no **Bluetooth**.
 - **Inicia com o Mac** (pode desligar no painel).
 
@@ -76,11 +88,16 @@ Precisa do Xcode (ou das Command Line Tools) — sem projeto Xcode, só `swiftc`
 RELEASE=1 ./build.sh     # binário universal + build/Fone.zip
 ```
 
+O `build.sh` também gera os metadados de App Intents (`appintentsmetadataprocessor`), que o Xcode
+normalmente cria — sem eles os botões dos widgets e os controles não funcionam.
+Widgets e controles leem o estado de `~/Library/Caches/dev.fone.blackshark/` e mandam comandos ao app
+por notificações Darwin (a sandbox do widget não acessa o USB).
+
 | Pasta | Conteúdo |
 |---|---|
 | `Shared/` | Protocolos HID ([BlackShark](Shared/BlackSharkProtocol.swift), [Attack Shark](Shared/AttackSharkProtocol.swift)) e estado compartilhado app ↔ widget |
 | `App/` | Transporte IOKit HID, controladores, telas SwiftUI, detecção Bluetooth |
-| `Widget/` | Extensão WidgetKit |
+| `Widget/` | Extensão WidgetKit: widgets, controles da Central de Controle e App Intents |
 | `Support/` | Info.plist, entitlements, ícone ([gerador](Support/Icon/make_icon.swift)) |
 | `tools/` | Sondas em Python (`pip install hidapi`) para investigar os aparelhos |
 

@@ -37,9 +37,28 @@ compile "$APP/Contents/MacOS/Fone" -- Shared/*.swift App/*.swift
 cp Support/App-Info.plist "$APP/Contents/Info.plist"
 cp Support/AppIcon.icns "$APP/Contents/Resources/"
 
-echo "▸ widget"
-compile "$APPEX/Contents/MacOS/FoneWidget" -application-extension -- Shared/*.swift Widget/*.swift
+echo "▸ widget + controles"
+TMP="$OUT/tmp"; mkdir -p "$TMP" "$APPEX/Contents/Resources"
+compile "$APPEX/Contents/MacOS/FoneWidget" -application-extension -wmo -module-name FoneWidget \
+  -emit-const-values-path "$TMP/FoneWidget.swiftconstvalues" \
+  -Xfrontend -const-gather-protocols-file -Xfrontend Support/appintents-protocols.json \
+  -- Shared/*.swift Widget/*.swift
 cp Support/Widget-Info.plist "$APPEX/Contents/Info.plist"
+
+# Metadados de App Intents (o que o Xcode faz em "Extract App Intents Metadata"):
+# sem isto os botões dos widgets e os controles da Central de Controle não funcionam.
+echo "▸ metadados App Intents"
+ls "$PWD"/Shared/*.swift "$PWD"/Widget/*.swift > "$TMP/sources.txt"
+echo "$TMP/FoneWidget.swiftconstvalues" > "$TMP/consts.txt"
+xcrun appintentsmetadataprocessor --output "$APPEX/Contents/Resources" \
+  --toolchain-dir "$(dirname "$(dirname "$(dirname "$(xcrun --find swiftc)")")")" \
+  --module-name FoneWidget --sdk-root "$SDK" \
+  --xcode-version "$(xcodebuild -version | awk '/Build version/{print $3}')" \
+  --platform-family macOS --deployment-target 14.0 --target-triple "${ARCHS[0]}-apple-macos14.0" \
+  --source-file-list "$TMP/sources.txt" --swift-const-vals-list "$TMP/consts.txt" \
+  --binary-file "$APPEX/Contents/MacOS/FoneWidget" --compile-time-extraction --deployment-aware-processing \
+  2>&1 | grep -i -E "error|warning" || true
+test -f "$APPEX/Contents/Resources/Metadata.appintents/extract.actionsdata" || { echo "✗ metadados não gerados"; exit 1; }
 
 echo "▸ assinatura ($SIGN_ID)"
 codesign --force --options runtime --sign "$SIGN_ID" --entitlements Support/Widget.entitlements "$APPEX"

@@ -143,7 +143,12 @@ struct MouseSnapshot: Codable, Equatable {
     var dpi: Int?
     var stage: Int?
     var pollingHz: Int?
+    /// DPI de cada estágio (nil = desativado), para os botões dos widgets.
+    var stageDPIs: [Int?]?
+    /// Falso enquanto o app não enviou a configuração ao mouse (trocar estágio sobrescreveria tudo).
+    var synced: Bool?
     var updated: Date = .distantPast
 
-    static let placeholder = MouseSnapshot(connected: true, battery: 100, dpi: 1200, stage: 1, pollingHz: 1000, updated: .now)
+    static let placeholder = MouseSnapshot(connected: true, link: .dongle, battery: 100, dpi: 1200, stage: 1, pollingHz: 1000,
+                                           stageDPIs: [800, 1200, 1600, 3200, 5600, 26000], synced: true, updated: .now)
 }

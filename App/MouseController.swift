@@ -30,6 +30,7 @@ final class MouseController: ObservableObject {
         config = d.data(forKey: Self.configKey).flatMap { try? JSONDecoder().decode(MouseConfig.self, from: $0) } ?? .factory
         synced = d.bool(forKey: Self.syncedKey)
         start()
+        CommandRouter.shared.mouse = self
         publish() // não deixa o widget com o estado da execução anterior
         watchdog = Task { [weak self] in
             while !Task.isCancelled {
@@ -214,7 +215,20 @@ final class MouseController: ObservableObject {
 
     private func publish() {
         snapshot.updated = .now
+        snapshot.stageDPIs = config.stages.map { $0.enabled ? $0.dpi : nil }
+        snapshot.synced = synced
+        snapshot.stage = config.activeStage
+        snapshot.dpi = config.activeDPI
+        snapshot.pollingHz = config.pollingHz
         SharedStore.save(snapshot, as: "mouse")
         WidgetCenter.shared.reloadAllTimelines()
+        if #available(macOS 26.0, *) { ControlCenter.shared.reloadAllControls() }
+    }
+
+    func nextStage() {
+        let enabled = config.stages.indices.filter { config.stages[$0].enabled }
+        guard !enabled.isEmpty else { return }
+        let pos = enabled.firstIndex(of: config.activeStage) ?? -1
+        setStage(enabled[(pos + 1) % enabled.count])
     }
 }

@@ -67,7 +67,7 @@ struct HeadsetSnapshot: Codable, Equatable {
     var micMuted: Bool?
     var updated: Date = .distantPast
 
-    static let placeholder = HeadsetSnapshot(connected: true, battery: 85, charging: false,
+    static let placeholder = HeadsetSnapshot(connected: true, link: .dongle, battery: 85, charging: false,
                                              ancMode: .anc, ancLevel: 4, micMuted: false, updated: .now)
 
     var batterySymbol: String {
@@ -83,26 +83,23 @@ struct HeadsetSnapshot: Codable, Equatable {
     }
 }
 
-/// Arquivo JSON compartilhado via App Group entre o app e o widget.
+/// Estado compartilhado app → widgets/controles, em ~/Library/Caches/dev.fone.blackshark/.
+///
+/// Não usa o App Group: com assinatura ad-hoc o macOS nega à sandbox do widget o acesso ao
+/// Group Container. O widget tem uma exceção de sandbox só-leitura para esta pasta.
 enum SharedStore {
-    static let appGroup = "group.dev.fone.blackshark"
-
-    static func url(_ name: String) -> URL {
-        let base = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Group Containers/\(appGroup)")
-        return base.appendingPathComponent("\(name).json")
+    /// Home real do usuário (dentro da sandbox, NSHomeDirectory() aponta para o container).
+    static var directory: URL {
+        let home = getpwuid(getuid()).map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
+        return URL(fileURLWithPath: home).appendingPathComponent("Library/Caches/dev.fone.blackshark")
     }
 
-    /// Grava no App Group (para o widget) e uma cópia em ~/Library/Caches (para scripts).
+    static func url(_ name: String) -> URL { directory.appendingPathComponent("\(name).json") }
+
     static func save<T: Encodable>(_ value: T, as name: String) {
         guard let data = try? JSONEncoder().encode(value) else { return }
-        let mirror = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Caches/dev.fone.blackshark/\(name).json")
-        for u in [url(name), mirror] {
-            try? FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? data.write(to: u, options: .atomic)
-        }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? data.write(to: url(name), options: .atomic)
     }
 
     static func load<T: Decodable>(_ type: T.Type, _ name: String) -> T? {

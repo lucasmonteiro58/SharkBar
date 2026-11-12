@@ -37,6 +37,7 @@ final class HeadsetController: ObservableObject {
         }
         hid.onUnsolicited = { [weak self] reply in self?.apply(reply) }
         hid.start()
+        CommandRouter.shared.headset = self
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
@@ -131,6 +132,7 @@ final class HeadsetController: ObservableObject {
         snapshot.updated = .now
         SharedStore.save(snapshot, as: "headset")
         WidgetCenter.shared.reloadAllTimelines()
+        if #available(macOS 26.0, *) { ControlCenter.shared.reloadAllControls() }
     }
 
     // MARK: - Escrita

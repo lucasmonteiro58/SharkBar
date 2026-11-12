@@ -83,7 +83,7 @@ struct HeadsetSnapshot: Codable, Equatable {
     }
 }
 
-/// Estado compartilhado app → widgets/controles, em ~/Library/Caches/dev.fone.blackshark/.
+/// Estado compartilhado app → widgets/controles, em ~/Library/Caches/<bundle id>/.
 ///
 /// Não usa o App Group: com assinatura ad-hoc o macOS nega à sandbox do widget o acesso ao
 /// Group Container. O widget tem uma exceção de sandbox só-leitura para esta pasta.
@@ -91,7 +91,7 @@ enum SharedStore {
     /// Home real do usuário (dentro da sandbox, NSHomeDirectory() aponta para o container).
     static var directory: URL {
         let home = getpwuid(getuid()).map { String(cString: $0.pointee.pw_dir) } ?? NSHomeDirectory()
-        return URL(fileURLWithPath: home).appendingPathComponent("Library/Caches/dev.fone.blackshark")
+        return URL(fileURLWithPath: home).appendingPathComponent("Library/Caches/\(Brand.bundleID)")
     }
 
     static func url(_ name: String) -> URL { directory.appendingPathComponent("\(name).json") }

@@ -3,5 +3,5 @@
 <plist version="1.0"><dict>
   <key>com.apple.security.app-sandbox</key><true/>
   <key>com.apple.security.temporary-exception.files.home-relative-path.read-only</key>
-  <array><string>/Library/Caches/dev.fone.blackshark/</string></array>
+  <array><string>/Library/Caches/dev.sharkbar.app/</string></array>
 </dict></plist>

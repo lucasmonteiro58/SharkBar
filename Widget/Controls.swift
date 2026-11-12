@@ -25,7 +25,7 @@ struct MouseValue: ControlValueProvider {
 @available(macOS 26.0, *)
 struct AudioModeControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "dev.fone.blackshark.control.audiomode", provider: HeadsetValue()) { s in
+        StaticControlConfiguration(kind: "dev.sharkbar.app.control.audiomode", provider: HeadsetValue()) { s in
             ControlWidgetButton(action: CycleAudioModeIntent()) {
                 Label {
                     Text("Modo de áudio")
@@ -43,7 +43,7 @@ struct AudioModeControl: ControlWidget {
 @available(macOS 26.0, *)
 struct NoiseCancellingControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "dev.fone.blackshark.control.anc", provider: HeadsetValue()) { s in
+        StaticControlConfiguration(kind: "dev.sharkbar.app.control.anc", provider: HeadsetValue()) { s in
             ControlWidgetToggle("Cancelamento de ruído", isOn: s.ancMode == .anc, action: ToggleNoiseCancellingIntent()) { on in
                 Label(on ? "Ligado" : "Desligado", systemImage: on ? "ear.trianglebadge.exclamationmark" : "ear.badge.waveform")
             }
@@ -57,7 +57,7 @@ struct NoiseCancellingControl: ControlWidget {
 @available(macOS 26.0, *)
 struct AmbientControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "dev.fone.blackshark.control.ambient", provider: HeadsetValue()) { s in
+        StaticControlConfiguration(kind: "dev.sharkbar.app.control.ambient", provider: HeadsetValue()) { s in
             ControlWidgetToggle("Modo ambiente", isOn: s.ancMode == .ambient, action: ToggleAmbientIntent()) { on in
                 Label(on ? "Ligado" : "Desligado", systemImage: "ear")
             }
@@ -71,7 +71,7 @@ struct AmbientControl: ControlWidget {
 @available(macOS 26.0, *)
 struct DPIControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "dev.fone.blackshark.control.dpi", provider: MouseValue()) { m in
+        StaticControlConfiguration(kind: "dev.sharkbar.app.control.dpi", provider: MouseValue()) { m in
             ControlWidgetButton(action: NextDPIStageIntent()) {
                 Label {
                     Text("DPI do mouse")
@@ -90,7 +90,7 @@ struct DPIControl: ControlWidget {
 @available(macOS 26.0, *)
 struct BatteryControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        StaticControlConfiguration(kind: "dev.fone.blackshark.control.battery", provider: BothValue()) { v in
+        StaticControlConfiguration(kind: "dev.sharkbar.app.control.battery", provider: BothValue()) { v in
             ControlWidgetButton(action: RefreshDevicesIntent()) {
                 Label {
                     Text("Bateria")

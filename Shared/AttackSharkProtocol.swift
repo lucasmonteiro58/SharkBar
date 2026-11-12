@@ -65,6 +65,70 @@ enum AttackShark {
         return [0x06, 0x09, 0x01, v, 0xFF - v, 0, 0, 0, 0]
     }
 
+    // MARK: Botões (0x08) e macros (0x09)
+
+    /// Os 7 botões físicos → grupo no relatório 0x08 (offset 3 + (grupo-1)*3).
+    static let buttonGroups: [UInt8] = [1, 2, 3, 7, 8, 5, 6]
+    /// Ação de fábrica de cada botão.
+    static let defaultButtons: [ButtonAction] = [.left, .right, .middle, .forward, .backward, .dpiPlus, .dpiMinus]
+
+    private static let remapBaseline: [UInt8] = [
+        0x08, 0x3b, 0x01, 0x02, 0x00, 0x00, 0x03, 0x00, 0x00, 0x04, 0x00, 0x00,
+        0x0d, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x0f, 0x00, 0x00, 0x06, 0x00, 0x00,
+        0x05, 0x00, 0x00, 0x3c, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+        0x01, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x94,
+    ]
+
+    /// 0x08 — remapeamento (59 bytes). Botão com macro vira `12 00 <grupo>`.
+    static func remapReport(_ buttons: [ButtonAction]) -> [UInt8] {
+        var r = remapBaseline
+        for (i, action) in buttons.prefix(7).enumerated() {
+            let group = buttonGroups[i]
+            let off = 3 + Int(group - 1) * 3
+            if action == .macro {
+                r[off] = 0x12; r[off + 1] = 0; r[off + 2] = group
+            } else {
+                r[off] = action.rawValue
+            }
+        }
+        let sum = r[3..<57].reduce(0) { $0 + UInt16($1) }
+        r[57] = UInt8(sum >> 8); r[58] = UInt8(sum & 0xFF)
+        return r
+    }
+
+    /// 0x09 — macro de teclado (EXPERIMENTAL: formato decifrado de capturas, não documentado).
+    /// Bloco lógico de 128 bytes: [4] repetições, [25] nº de eventos, [26…] pares (atraso|flag, tecla),
+    /// checksum soma([0..125]) em [126..127]. Vai em 3 relatórios de 64 bytes: 09 40 <id> 00/01, 09 0c <id> 02.
+    static func macroReports(_ macro: MouseMacro, group: UInt8) -> [[UInt8]] {
+        var block = [UInt8](repeating: 0, count: 128)
+        block[4] = UInt8(max(1, min(255, macro.repeatCount)))
+        var events: [(UInt8, UInt8)] = []
+        let steps = macro.keys.prefix(24)
+        // Byte de flags = (atraso/10) | 0x01 ao apertar, | 0x81 ao soltar (como o app oficial:
+        // 100 ms → 0b / 8b). O último evento do macro fica com atraso zero (0x81).
+        let d = UInt8(max(1, min(120, macro.delayMs / 10)))
+        for key in steps {
+            for m in key.modifierUsages { events.append((d | 0x01, m)) }
+            events.append((d | 0x01, key.usage))
+            events.append((d | 0x81, key.usage))
+            for m in key.modifierUsages.reversed() { events.append((d | 0x81, m)) }
+        }
+        if !events.isEmpty { events[events.count - 1].0 = 0x81 }
+        let capped = events.prefix(49)
+        block[25] = UInt8(capped.count)
+        for (i, e) in capped.enumerated() { block[26 + i * 2] = e.0; block[27 + i * 2] = e.1 }
+        let sum = block[0..<126].reduce(0) { $0 + UInt16($1) }
+        block[126] = UInt8(sum >> 8); block[127] = UInt8(sum & 0xFF)
+        let chunks: [(UInt8, Range<Int>)] = [(0x40, 0..<60), (0x40, 60..<120), (0x0c, 120..<128)]
+        return chunks.enumerated().map { idx, c in
+            var r = [UInt8](repeating: 0, count: 64)
+            r[0] = 0x09; r[1] = c.0; r[2] = group; r[3] = UInt8(idx)
+            r.replaceSubrange(4..<(4 + c.1.count), with: block[c.1])
+            return r
+        }
+    }
+
     enum Event {
         case heartbeat(battery: Int, online: Bool)
         case stageButton(stage: Int)   // 0-based
@@ -80,6 +144,88 @@ enum AttackShark {
         default: return nil
         }
     }
+}
+
+/// Ações possíveis para um botão do mouse (IDs do relatório 0x08).
+enum ButtonAction: UInt8, Codable, CaseIterable, Identifiable {
+    case off = 0x01, left = 0x02, right = 0x03, middle = 0x04, backward = 0x05, forward = 0x06
+    case doubleClick = 0x07, fire = 0x08, scrollUp = 0x09, scrollDown = 0x0a
+    case dpiCycle = 0x0d, dpiPlus = 0x0e, dpiMinus = 0x0f
+    case mediaPlayer = 0x15, previousTrack = 0x16, nextTrack = 0x17, playPause = 0x18, stop = 0x19
+    case mute = 0x1a, volumeUp = 0x1b, volumeDown = 0x1c
+    case calculator = 0x1d, email = 0x1e, browserForward = 0x20, browserBack = 0x21, browserStop = 0x22
+    case myComputer = 0x23, browserRefresh = 0x24, browserHome = 0x25, browserSearch = 0x26
+    case macro = 0x12
+
+    var id: UInt8 { rawValue }
+
+    var title: String {
+        switch self {
+        case .off: "Desativado"
+        case .left: "Clique esquerdo"
+        case .right: "Clique direito"
+        case .middle: "Clique do meio"
+        case .backward: "Voltar"
+        case .forward: "Avançar"
+        case .doubleClick: "Duplo clique"
+        case .fire: "Tiro rápido"
+        case .scrollUp: "Rolar para cima"
+        case .scrollDown: "Rolar para baixo"
+        case .dpiCycle: "Ciclar DPI"
+        case .dpiPlus: "DPI +"
+        case .dpiMinus: "DPI −"
+        case .mediaPlayer: "Abrir player"
+        case .previousTrack: "Faixa anterior"
+        case .nextTrack: "Próxima faixa"
+        case .playPause: "Play / pausa"
+        case .stop: "Parar"
+        case .mute: "Mudo"
+        case .volumeUp: "Volume +"
+        case .volumeDown: "Volume −"
+        case .calculator: "Calculadora"
+        case .email: "E-mail"
+        case .browserForward: "Navegador: avançar"
+        case .browserBack: "Navegador: voltar"
+        case .browserStop: "Navegador: parar"
+        case .myComputer: "Meu computador"
+        case .browserRefresh: "Navegador: recarregar"
+        case .browserHome: "Navegador: início"
+        case .browserSearch: "Navegador: buscar"
+        case .macro: "Macro…"
+        }
+    }
+
+    var category: String {
+        switch self {
+        case .off, .left, .right, .middle, .backward, .forward, .doubleClick, .fire: "Mouse"
+        case .scrollUp, .scrollDown, .dpiCycle, .dpiPlus, .dpiMinus: "Controles"
+        case .mediaPlayer, .previousTrack, .nextTrack, .playPause, .stop, .mute, .volumeUp, .volumeDown: "Mídia"
+        case .macro: "Macro"
+        default: "Atalhos do sistema"
+        }
+    }
+}
+
+/// Uma tecla de macro: código HID + modificadores.
+struct MacroKey: Codable, Equatable, Hashable, Identifiable {
+    var id = UUID()
+    var usage: UInt8          // HID keyboard usage (A = 0x04)
+    var ctrl = false, shift = false, option = false, command = false
+    var label: String
+
+    var modifierUsages: [UInt8] {
+        [ctrl ? 0xE0 : nil, shift ? 0xE1 : nil, option ? 0xE2 : nil, command ? 0xE3 : nil].compactMap { $0 }
+    }
+
+    var display: String {
+        (ctrl ? "⌃" : "") + (option ? "⌥" : "") + (shift ? "⇧" : "") + (command ? "⌘" : "") + label
+    }
+}
+
+struct MouseMacro: Codable, Equatable {
+    var keys: [MacroKey] = []
+    var delayMs = 30
+    var repeatCount = 1
 }
 
 struct RGB: Codable, Equatable, Hashable {
@@ -121,6 +267,15 @@ struct MouseConfig: Codable, Equatable {
     var sleepMinutes: Double = 0.5
     var deepSleepMinutes = 10
     var responseMs = 4
+    /// Ação de cada um dos 7 botões (nil = padrão de fábrica).
+    var buttons: [ButtonAction]? = nil
+    /// Macro por botão (índice 0…6), usado quando a ação é `.macro`.
+    var macros: [Int: MouseMacro]? = nil
+
+    var buttonActions: [ButtonAction] {
+        get { buttons ?? AttackShark.defaultButtons }
+        set { buttons = newValue }
+    }
 
     /// Padrão de fábrica do X6.
     static let factory = MouseConfig(stages: [

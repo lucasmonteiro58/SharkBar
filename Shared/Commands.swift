@@ -13,8 +13,10 @@ enum FoneCommand: String, CaseIterable {
     case polling125 = "mouse.polling.125", polling250 = "mouse.polling.250"
     case polling500 = "mouse.polling.500", polling1000 = "mouse.polling.1000"
     case refresh = "refresh"
+    case nextProfile = "profile.next"
+    case openWindow = "window.open"
 
-    static let prefix = "dev.fone.blackshark.cmd."
+    static let prefix = Brand.bundleID + ".cmd."
     var notificationName: String { Self.prefix + rawValue }
 
     static func stage(_ i: Int) -> FoneCommand? { FoneCommand(rawValue: "mouse.stage.\(i)") }

@@ -1,16 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleIdentifier</key><string>dev.fone.blackshark</string>
-  <key>CFBundleName</key><string>Fone</string>
-  <key>CFBundleDisplayName</key><string>Fone</string>
-  <key>CFBundleExecutable</key><string>Fone</string>
+  <key>CFBundleIdentifier</key><string>dev.sharkbar.app</string>
+  <key>CFBundleName</key><string>SharkBar</string>
+  <key>CFBundleDisplayName</key><string>SharkBar</string>
+  <key>CFBundleExecutable</key><string>SharkBar</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.1</string>
-  <key>CFBundleVersion</key><string>2</string>
+  <key>CFBundleShortVersionString</key><string>2.0</string>
+  <key>CFBundleVersion</key><string>3</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleURLTypes</key><array><dict>
+    <key>CFBundleURLName</key><string>dev.sharkbar.app</string>
+    <key>CFBundleURLSchemes</key><array><string>sharkbar</string></array>
+  </dict></array>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSBluetoothAlwaysUsageDescription</key><string>Para saber se o fone e o mouse estão conectados por Bluetooth.</string>
+  <key>NSBluetoothAlwaysUsageDescription</key><string>O SharkBar usa o Bluetooth para saber se o fone e o mouse estão conectados por Bluetooth.</string>
 </dict></plist>

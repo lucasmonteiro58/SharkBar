@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/icon.png" width="160" alt="Ícone do Fone">
+  <img src="docs/icon.png" width="160" alt="Ícone do SharkBar">
 </p>
 
-<h1 align="center">Fone</h1>
+<h1 align="center">SharkBar</h1>
 
 <p align="center">
   Controle o <b>Razer BlackShark V3 Pro</b> e o <b>Attack Shark X6</b> direto da barra de menu do macOS,<br>
@@ -17,6 +17,19 @@
 </p>
 
 ---
+
+## ✨ Destaques da 2.0
+
+- **Interface nova**: popover com cartões por aparelho e janela com barra lateral (Aparelhos, Perfis, Automação, Bateria, Ajustes).
+- **Perfis** (Jogo, Música, Reunião… ou os seus) com ANC, sidetone, slot de EQ, DPI e polling — aplicados com um clique.
+- **Perfil por app**: troca sozinho quando um jogo ou o Zoom vem para a frente.
+- **Atalhos globais** (padrão ⌃⌥A modo de áudio, ⌃⌥D DPI, ⌃⌥P perfil) e ações no **app Atalhos / Siri**.
+- **Avisos** de bateria fraca e de carga completa, **histórico de bateria** com gráfico e estimativa de duração.
+- **HUD na tela** ao trocar ANC, DPI, mute ou perfil.
+- **Mute sincronizado**: a chave do fone também muta a entrada do Mac.
+- **Biblioteca de EQ** com presets (FPS, Graves, Voz, Música, Cinema…), salvar, exportar e importar.
+- **Botões do mouse** remapeáveis e **macros de teclado** (experimental).
+- **Barra de menu configurável**: ícones e %, só ícones, só fone ou só mouse.
 
 ## ✨ O que faz
 
@@ -65,16 +78,16 @@ Em **Central de Controle › Editar Controles** aparecem: *Modo de áudio do fon
 
 ## 📥 Instalação
 
-1. Baixe o **`Fone.zip`** na [página de releases](../../releases/latest) e descompacte.
-2. Arraste o **Fone.app** para **Aplicativos**.
+1. Baixe o **`SharkBar.zip`** na [página de releases](../../releases/latest) e descompacte.
+2. Arraste o **SharkBar.app** para **Aplicativos**.
 3. Na primeira vez, o macOS vai bloquear (o app não é assinado por um desenvolvedor Apple pago).
    Libere de um destes jeitos:
    - **Ajustes do Sistema › Privacidade e Segurança** → "Abrir Mesmo Assim", ou
    - no Terminal:
      ```bash
-     xattr -dr com.apple.quarantine /Applications/Fone.app
+     xattr -dr com.apple.quarantine /Applications/SharkBar.app
      ```
-4. Abra o Fone. Se o macOS pedir acesso ao **Bluetooth**, aceite — é só para saber se os aparelhos estão conectados por BT.
+4. Abra o SharkBar. Se o macOS pedir acesso ao **Bluetooth**, aceite — é só para saber se os aparelhos estão conectados por BT.
 
 > Os controles funcionam pelos **dongles USB 2.4 GHz** (e pelo cabo, no fone). Por Bluetooth,
 > o app só mostra conexão e bateria — os protocolos de configuração não passam por BT.
@@ -85,18 +98,19 @@ Precisa do Xcode (ou das Command Line Tools) — sem projeto Xcode, só `swiftc`
 
 ```bash
 ./build.sh               # compila para este Mac, instala em ~/Applications e abre
-RELEASE=1 ./build.sh     # binário universal + build/Fone.zip
+RELEASE=1 ./build.sh     # binário universal + build/SharkBar.zip
 ```
 
 O `build.sh` também gera os metadados de App Intents (`appintentsmetadataprocessor`), que o Xcode
-normalmente cria — sem eles os botões dos widgets e os controles não funcionam.
-Widgets e controles leem o estado de `~/Library/Caches/dev.fone.blackshark/` e mandam comandos ao app
+normalmente cria — sem eles os botões dos widgets, os controles e as ações do app Atalhos não aparecem.
+Widgets e controles leem o estado de `~/Library/Caches/dev.sharkbar.app/` e mandam comandos ao app
 por notificações Darwin (a sandbox do widget não acessa o USB).
 
 | Pasta | Conteúdo |
 |---|---|
 | `Shared/` | Protocolos HID ([BlackShark](Shared/BlackSharkProtocol.swift), [Attack Shark](Shared/AttackSharkProtocol.swift)) e estado compartilhado app ↔ widget |
-| `App/` | Transporte IOKit HID, controladores, telas SwiftUI, detecção Bluetooth |
+| `App/` | Transporte IOKit HID, controladores, perfis, automações, avisos, HUD, atalhos, ações do app Atalhos |
+| `App/UI/` | Popover e janela (páginas de cada aparelho, perfis, automação, bateria, ajustes) |
 | `Widget/` | Extensão WidgetKit: widgets, controles da Central de Controle e App Intents |
 | `Support/` | Info.plist, entitlements, ícone ([gerador](Support/Icon/make_icon.swift)) |
 | `tools/` | Sondas em Python (`pip install hidapi`) para investigar os aparelhos |
@@ -138,6 +152,8 @@ então o app guarda o estado e reenvia o relatório completo a cada mudança.
 | `0x04` | 52 B | DPI (`DPI/50 − 1`, 16 bits), máscara de estágios, estágio ativo, cores, lift-off, angle, ripple; checksum = soma de `[3..49]` em `[50..51]` |
 | `0x05` | 13 B | iluminação, cor, velocidade, sleep (`min×2`), sono profundo, debounce; checksum em `[11..12]` |
 | `0x06` | 9 B | polling: `1000/Hz` e complemento |
+| `0x08` | 59 B | ação de cada um dos 7 botões; macro = `12 00 <grupo>`; checksum de `[3..56]` em `[57..58]` |
+| `0x09` | 3 × 64 B | macro (experimental): bloco de 128 B com repetições, eventos `(atraso/10 \| flag, tecla HID)` e checksum |
 
 O dongle confirma com o input report `03 10 50 00 <id>` e envia `03 10 40 01 <bateria/10>` como heartbeat.
 </details>

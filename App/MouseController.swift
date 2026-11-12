@@ -138,6 +138,16 @@ final class MouseController: ObservableObject {
         throw lastError
     }
 
+    /// Envia sem esperar ACK (partes intermediárias do macro).
+    private func sendRaw(_ report: [UInt8]) async throws {
+        guard let dev = device else { throw HeadsetError.notConnected }
+        let rc = report.withUnsafeBufferPointer {
+            IOHIDDeviceSetReport(dev, kIOHIDReportTypeFeature, CFIndex(report[0]), $0.baseAddress!, $0.count)
+        }
+        if rc != kIOReturnSuccess { throw HeadsetError.io(rc) }
+        try? await Task.sleep(for: .milliseconds(30))
+    }
+
     private func sendOnce(_ report: [UInt8]) async throws {
         guard let dev = device else { throw HeadsetError.notConnected }
         let id = report[0]
@@ -161,7 +171,7 @@ final class MouseController: ObservableObject {
         }
     }
 
-    private enum Part { case config, lighting, polling }
+    private enum Part { case config, lighting, polling, buttons }
 
     /// Enfileira escritas (uma de cada vez, cada uma esperando seu ACK).
     private func write(_ parts: [Part]) {
@@ -176,9 +186,19 @@ final class MouseController: ObservableObject {
                     case .config: try await send(AttackShark.configReport(config))
                     case .lighting: try await send(AttackShark.lightingReport(config))
                     case .polling: try await send(AttackShark.pollingReport(config.pollingHz))
+                    case .buttons:
+                        // Macros primeiro (relatório 0x09 em 3 partes), depois o mapa de botões.
+                        for (i, action) in config.buttonActions.enumerated() where action == .macro {
+                            if let macro = config.macros?[i], !macro.keys.isEmpty {
+                                for part in AttackShark.macroReports(macro, group: AttackShark.buttonGroups[i]) {
+                                    try await sendRaw(part)
+                                }
+                            }
+                        }
+                        try await send(AttackShark.remapReport(config.buttonActions))
                     }
                 }
-                if parts.count == 3 { synced = true; UserDefaults.standard.set(true, forKey: Self.syncedKey) }
+                if parts.contains(.polling) && parts.contains(.config) && parts.contains(.lighting) { synced = true; UserDefaults.standard.set(true, forKey: Self.syncedKey) }
                 lastError = nil
             } catch {
                 lastError = "Mouse: \(error.localizedDescription)"
@@ -192,7 +212,8 @@ final class MouseController: ObservableObject {
 
     // MARK: - Ações
 
-    func sendAll() { write([.config, .lighting, .polling]) }
+    func sendAll() { write([.config, .lighting, .polling, .buttons]) }
+    func applyButtons() { write([.buttons]) }
     /// DPI, cores, lift-off, angle, ripple. Reenvia a iluminação para o LED repintar.
     func applyConfig() { write([.config, .lighting]) }
     func applyLighting() { write([.lighting]) }

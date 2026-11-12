@@ -24,6 +24,7 @@ final class HeadsetController: ObservableObject {
 
     private let hid = HIDTransport()
     private var pollTask: Task<Void, Never>?
+    private var mutePoll: Task<Void, Never>?
 
     init() {
         hid.onConnectionChange = { [weak self] connected in
@@ -44,6 +45,24 @@ final class HeadsetController: ObservableObject {
                 await self?.refreshStatus()
             }
         }
+        // A chave de mute e o botão de ANC no fone não avisam sozinhos: lê a cada 2 s.
+        mutePoll = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                await self?.pollQuick()
+            }
+        }
+    }
+
+    private func pollQuick() async {
+        guard hid.isConnected, snapshot.connected, snapshot.link != .bluetooth, !busy else { return }
+        let before = (snapshot.micMuted, snapshot.ancMode, snapshot.ancLevel)
+        for cmd: BlackShark.Command in [.micMute, .anc] {
+            if let d = try? await hid.transact(cmd.rawValue) {
+                apply(BlackShark.Reply(command: cmd.rawValue, status: .success, data: d))
+            }
+        }
+        if before != (snapshot.micMuted, snapshot.ancMode, snapshot.ancLevel) { publish() }
     }
 
     // MARK: - Leitura
@@ -164,6 +183,19 @@ final class HeadsetController: ObservableObject {
         let all = AncMode.allCases
         let cur = snapshot.ancMode ?? .off
         setANC(all[(all.firstIndex(of: cur)! + 1) % all.count])
+    }
+
+    func setSidetone(_ v: Int) {
+        sidetone = max(0, min(100, v))
+        commitSidetone()
+    }
+
+    /// Aplica um preset de EQ ao slot ativo (ou ao indicado) e grava no fone.
+    func applyEQ(_ bands: [Int], slot: Int? = nil) {
+        guard let id = slot ?? eqSlots.first(where: \.active)?.id,
+              let i = eqSlots.firstIndex(where: { $0.id == id }) else { return }
+        eqSlots[i].bands = bands
+        commitSlot(id)
     }
 
     func commitSidetone() {

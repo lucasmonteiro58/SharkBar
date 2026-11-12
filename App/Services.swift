@@ -78,7 +78,14 @@ final class HUD {
         hideTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.4))
             guard !Task.isCancelled else { return }
-            NSAnimationContext.runAnimationGroup({ $0.duration = 0.35; p.animator().alphaValue = 0 }, completionHandler: nil)
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.35; p.animator().alphaValue = 0 }, completionHandler: {
+                // Tira da tela e solta a hierarquia SwiftUI (antes ficava invisível, mas composta e na memória).
+                MainActor.assumeIsolated {
+                    guard p.alphaValue == 0 else { return }
+                    p.orderOut(nil)
+                    p.contentView = nil
+                }
+            })
         }
     }
 }

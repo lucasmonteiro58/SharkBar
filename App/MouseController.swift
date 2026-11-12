@@ -6,7 +6,11 @@ import WidgetKit
 /// Attack Shark X6: escuta heartbeats/eventos e envia relatórios feature com ACK.
 @MainActor
 final class MouseController: ObservableObject {
+    /// O que a interface vê; só é reatribuído quando muda (ver `publish()`).
     @Published private(set) var snapshot = MouseSnapshot()
+    /// Cópia de trabalho: heartbeats e eventos escrevem aqui.
+    private var state = MouseSnapshot()
+    private var lastSaved = Date.distantPast
     @Published private(set) var dongleConnected = false
     @Published var config: MouseConfig { didSet { saveConfig() } }
     /// Falso até o primeiro envio completo: o mouse pode ter outra configuração.
@@ -55,7 +59,7 @@ final class MouseController: ObservableObject {
     /// Decide a conexão: cabo > dongle com heartbeat recente > Bluetooth > nenhuma.
     private func updateLink(checkBluetooth: Bool = false) {
         var link: DeviceLink = .none
-        var battery = snapshot.battery
+        var battery = state.battery
         if hasCable {
             link = .usb
         } else if hasDongle, Date.now.timeIntervalSince(lastHeartbeat) < Self.offlineGrace {
@@ -63,16 +67,16 @@ final class MouseController: ObservableObject {
         } else if checkBluetooth {
             let bt = BluetoothWatcher.status(matching: ["X6", "Attack Shark"])
             if bt.connected { link = .bluetooth; battery = bt.battery ?? battery }
-        } else if snapshot.link == .bluetooth {
+        } else if state.link == .bluetooth {
             link = .bluetooth
         }
-        dongleConnected = !devices.isEmpty
-        if link != snapshot.link || battery != snapshot.battery || snapshot.connected != (link != .none) {
-            snapshot.link = link
-            snapshot.connected = link != .none
-            snapshot.battery = battery
-            publish()
+        if dongleConnected != !devices.isEmpty { dongleConnected = !devices.isEmpty }
+        if link != state.link || battery != state.battery || state.connected != (link != .none) {
+            state.link = link
+            state.connected = link != .none
+            state.battery = battery
         }
+        publish() // compara antes de avisar a interface
     }
 
     // MARK: - HID
@@ -129,7 +133,7 @@ final class MouseController: ObservableObject {
             // Heartbeat "offline" não derruba na hora: o watchdog só marca desligado após `offlineGrace`.
             if online {
                 lastHeartbeat = .now
-                if snapshot.battery != battery { snapshot.battery = battery; publish() }
+                if state.battery != battery { state.battery = battery; publish() }
             }
             updateLink()
         case .stageButton(let stage):
@@ -218,9 +222,9 @@ final class MouseController: ObservableObject {
             } catch {
                 lastError = "Mouse: \(error.localizedDescription)"
             }
-            snapshot.pollingHz = config.pollingHz
-            snapshot.stage = config.activeStage
-            snapshot.dpi = config.activeDPI
+            state.pollingHz = config.pollingHz
+            state.stage = config.activeStage
+            state.dpi = config.activeDPI
             publish()
         }
     }
@@ -250,13 +254,21 @@ final class MouseController: ObservableObject {
     }
 
     private func publish() {
-        snapshot.updated = .now
-        snapshot.stageDPIs = config.stages.map { $0.enabled ? $0.dpi : nil }
-        snapshot.synced = synced
-        snapshot.stage = config.activeStage
-        snapshot.dpi = config.activeDPI
-        snapshot.pollingHz = config.pollingHz
-        SharedStore.save(snapshot, as: "mouse")
+        state.stageDPIs = config.stages.map { $0.enabled ? $0.dpi : nil }
+        state.synced = synced
+        state.stage = config.activeStage
+        state.dpi = config.activeDPI
+        state.pollingHz = config.pollingHz
+        var candidate = state
+        candidate.updated = snapshot.updated
+        let changed = candidate != snapshot
+        // Sem mudança, só renova o carimbo do widget de vez em quando (ele considera velho após 30 min).
+        guard changed || Date.now.timeIntervalSince(lastSaved) > 600 else { return }
+        state.updated = .now
+        lastSaved = .now
+        SharedStore.save(state, as: "mouse")
+        guard changed else { return }
+        snapshot = state
         WidgetCenter.shared.reloadAllTimelines()
         if #available(macOS 26.0, *) { ControlCenter.shared.reloadAllControls() }
     }

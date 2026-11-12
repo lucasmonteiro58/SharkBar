@@ -12,7 +12,12 @@ struct EQSlot: Identifiable, Equatable {
 
 @MainActor
 final class HeadsetController: ObservableObject {
+    /// O que a interface vê. Só é reatribuído quando algo muda de verdade —
+    /// cada atribuição a um @Published redesenha popover, janela e ícone da barra.
     @Published private(set) var snapshot = HeadsetSnapshot()
+    /// Cópia de trabalho: as leituras escrevem aqui e `publish()` repassa se mudou.
+    private var state = HeadsetSnapshot()
+    private var lastSaved = Date.distantPast
     @Published private(set) var dongleConnected = false
     @Published var sidetone: Int = 0
     @Published var autoOff: Int = 15
@@ -29,14 +34,14 @@ final class HeadsetController: ObservableObject {
     init() {
         hid.onConnectionChange = { [weak self] connected in
             guard let self else { return }
-            dongleConnected = connected
+            if dongleConnected != connected { dongleConnected = connected }
             if connected {
                 Task { await self.refreshAll() }
             } else {
                 Task { await self.refreshStatus() }
             }
         }
-        hid.onUnsolicited = { [weak self] reply in self?.apply(reply) }
+        hid.onUnsolicited = { [weak self] reply in self?.apply(reply); self?.publish() }
         hid.start()
         CommandRouter.shared.headset = self
         pollTask = Task { [weak self] in
@@ -55,14 +60,14 @@ final class HeadsetController: ObservableObject {
     }
 
     private func pollQuick() async {
-        guard hid.isConnected, snapshot.connected, snapshot.link != .bluetooth, !busy else { return }
-        let before = (snapshot.micMuted, snapshot.ancMode, snapshot.ancLevel)
+        guard hid.isConnected, state.connected, state.link != .bluetooth, !busy else { return }
+        let before = (state.micMuted, state.ancMode, state.ancLevel)
         for cmd: BlackShark.Command in [.micMute, .anc] {
             if let d = try? await hid.transact(cmd.rawValue) {
                 apply(BlackShark.Reply(command: cmd.rawValue, status: .success, data: d))
             }
         }
-        if before != (snapshot.micMuted, snapshot.ancMode, snapshot.ancLevel) { publish() }
+        if before != (state.micMuted, state.ancMode, state.ancLevel) { publish() }
     }
 
     // MARK: - Leitura
@@ -77,26 +82,27 @@ final class HeadsetController: ObservableObject {
                     apply(BlackShark.Reply(command: cmd.rawValue, status: .success, data: try await hid.transact(cmd.rawValue)))
                 }
                 viaHID = true
-                lastError = nil
+                if lastError != nil { lastError = nil }
             } catch {
-                lastError = error.localizedDescription
+                let msg = error.localizedDescription
+                if lastError != msg { lastError = msg }
             }
         }
         if viaHID {
-            snapshot.connected = true
-            snapshot.link = [0x0576, 0x0579].contains(hid.productID ?? 0) ? .usb : .dongle
+            state.connected = true
+            state.link = [0x0576, 0x0579].contains(hid.productID ?? 0) ? .usb : .dongle
         } else {
             let bt = BluetoothWatcher.status(matching: ["BlackShark"])
-            snapshot.connected = bt.connected
-            snapshot.link = bt.connected ? .bluetooth : DeviceLink.none
+            state.connected = bt.connected
+            state.link = bt.connected ? .bluetooth : DeviceLink.none
             if bt.connected {
                 // Por Bluetooth o protocolo da Razer não está disponível.
-                snapshot.battery = bt.battery
-                snapshot.charging = false
-                snapshot.ancMode = nil
-                snapshot.ancLevel = nil
-                snapshot.micMuted = nil
-                lastError = nil
+                state.battery = bt.battery
+                state.charging = false
+                state.ancMode = nil
+                state.ancLevel = nil
+                state.micMuted = nil
+                if lastError != nil { lastError = nil }
             }
         }
         publish()
@@ -105,7 +111,7 @@ final class HeadsetController: ObservableObject {
     /// Tudo, inclusive EQs — ao conectar e ao abrir a janela.
     func refreshAll() async {
         await refreshStatus()
-        guard snapshot.connected, snapshot.link != .bluetooth else { return }
+        guard state.connected, state.link != .bluetooth else { return }
         do {
             sidetone = Int(try await one(.sidetone))
             autoOff = Int(try await one(.autoOff))
@@ -136,20 +142,28 @@ final class HeadsetController: ObservableObject {
 
     private func apply(_ r: BlackShark.Reply) {
         switch BlackShark.Command(rawValue: r.command) {
-        case .battery where r.data.count == 1 && r.data[0] <= 100: snapshot.battery = Int(r.data[0])
-        case .charging where r.data.count == 1: snapshot.charging = r.data[0] == 1
+        case .battery where r.data.count == 1 && r.data[0] <= 100: state.battery = Int(r.data[0])
+        case .charging where r.data.count == 1: state.charging = r.data[0] == 1
         case .anc where r.data.count == 2:
-            snapshot.ancMode = AncMode(rawValue: Int(r.data[0]))
-            snapshot.ancLevel = Int(r.data[1])
-        case .micMute where r.data.count == 1: snapshot.micMuted = r.data[0] == 1
-        case .sidetone where r.data.count == 1: sidetone = Int(r.data[0])
+            state.ancMode = AncMode(rawValue: Int(r.data[0]))
+            state.ancLevel = Int(r.data[1])
+        case .micMute where r.data.count == 1: state.micMuted = r.data[0] == 1
+        case .sidetone where r.data.count == 1: if sidetone != Int(r.data[0]) { sidetone = Int(r.data[0]) }
         default: break
         }
     }
 
     private func publish() {
-        snapshot.updated = .now
-        SharedStore.save(snapshot, as: "headset")
+        var candidate = state
+        candidate.updated = snapshot.updated
+        let changed = candidate != snapshot
+        // Sem mudança, só renova o carimbo do widget de vez em quando (ele considera velho após 30 min).
+        guard changed || Date.now.timeIntervalSince(lastSaved) > 600 else { return }
+        state.updated = .now
+        lastSaved = .now
+        SharedStore.save(state, as: "headset")
+        guard changed else { return }
+        snapshot = state
         WidgetCenter.shared.reloadAllTimelines()
         if #available(macOS 26.0, *) { ControlCenter.shared.reloadAllControls() }
     }
@@ -170,7 +184,7 @@ final class HeadsetController: ObservableObject {
     }
 
     func setANC(_ mode: AncMode, level: Int? = nil) {
-        let lvl = max(1, min(10, level ?? snapshot.ancLevel ?? 5))
+        let lvl = max(1, min(10, level ?? state.ancLevel ?? 5))
         write {
             _ = try await self.hid.transact(BlackShark.Command.anc.set, [UInt8(mode.rawValue), UInt8(lvl)])
             let d = try await self.hid.transact(BlackShark.Command.anc.rawValue)
@@ -181,7 +195,7 @@ final class HeadsetController: ObservableObject {
 
     func cycleANC() {
         let all = AncMode.allCases
-        let cur = snapshot.ancMode ?? .off
+        let cur = state.ancMode ?? .off
         setANC(all[(all.firstIndex(of: cur)! + 1) % all.count])
     }
 

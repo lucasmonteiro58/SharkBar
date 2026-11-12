@@ -48,8 +48,12 @@ final class AppModel: ObservableObject {
 
         notifier.requestPermission()
 
-        headset.$snapshot.dropFirst().sink { [weak self] s in self?.headsetChanged(s) }.store(in: &bag)
-        mouse.$snapshot.dropFirst().sink { [weak self] s in self?.mouseChanged(s) }.store(in: &bag)
+        // O estado é atualizado campo a campo (estágio, depois DPI…); sem esperar ele assentar,
+        // o HUD mostrava o valor anterior. 120 ms depois da última mudança, já está completo.
+        headset.$snapshot.dropFirst().debounce(for: .milliseconds(120), scheduler: RunLoop.main)
+            .sink { [weak self] s in self?.headsetChanged(s) }.store(in: &bag)
+        mouse.$snapshot.dropFirst().debounce(for: .milliseconds(120), scheduler: RunLoop.main)
+            .sink { [weak self] s in self?.mouseChanged(s) }.store(in: &bag)
 
         hotkeys.onAction = { [weak self] in self?.perform($0) }
         hotkeys.register(settings.data.hotkeys)

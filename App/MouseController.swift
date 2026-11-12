@@ -16,6 +16,9 @@ final class MouseController: ObservableObject {
 
     private let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
     private var device: IOHIDDevice?
+    /// 0xFA60 = dongle 2.4 GHz; outro PID do mesmo fabricante = mouse no cabo USB.
+    private var productID = 0
+    private var wiredLink: DeviceLink { productID == AttackShark.productID ? .dongle : .usb }
     private let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
     private var ackWaiter: (id: UInt8, cont: CheckedContinuation<Void, Error>)?
     private var lastHeartbeat = Date.distantPast
@@ -36,8 +39,9 @@ final class MouseController: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 guard let self else { return }
-                let viaDongle = self.snapshot.link == .dongle && Date.now.timeIntervalSince(self.lastHeartbeat) < 10
-                var link: DeviceLink = viaDongle ? .dongle : .none
+                let wired = self.device != nil && self.productID != AttackShark.productID
+                let viaDongle = wired || (self.snapshot.link == .dongle && Date.now.timeIntervalSince(self.lastHeartbeat) < 10)
+                var link: DeviceLink = viaDongle ? self.wiredLink : .none
                 var battery = self.snapshot.battery
                 if !viaDongle {
                     let bt = BluetoothWatcher.status(matching: ["X6", "Attack Shark"])
@@ -60,9 +64,9 @@ final class MouseController: ObservableObject {
     // MARK: - HID
 
     private func start() {
+        // Sem filtrar o PID: o dongle é 1d57:fa60; no cabo o X6 aparece com outro PID do mesmo fabricante.
         IOHIDManagerSetDeviceMatching(manager, [
             kIOHIDVendorIDKey: AttackShark.vendorID,
-            kIOHIDProductIDKey: AttackShark.productID,
             kIOHIDPrimaryUsagePageKey: AttackShark.configUsagePage,
             kIOHIDPrimaryUsageKey: AttackShark.configUsage,
         ] as CFDictionary)
@@ -80,9 +84,18 @@ final class MouseController: ObservableObject {
     }
 
     private func attach(_ dev: IOHIDDevice) {
-        guard device == nil else { return }
+        let pid = IOHIDDeviceGetProperty(dev, kIOHIDProductIDKey as CFString) as? Int ?? 0
+        // Prefere o cabo quando os dois estão presentes (o cabo também carrega o mouse).
+        if device != nil, !(productID == AttackShark.productID && pid != AttackShark.productID) { return }
         device = dev
+        productID = pid
         dongleConnected = true
+        if pid != AttackShark.productID {
+            snapshot.link = .usb
+            snapshot.connected = true
+            lastHeartbeat = .now
+            publish()
+        }
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         IOHIDDeviceRegisterInputReportCallback(dev, buffer, 512, { ctx, _, _, _, _, report, length in
             let me = Unmanaged<MouseController>.fromOpaque(ctx!).takeUnretainedValue()
@@ -109,7 +122,7 @@ final class MouseController: ObservableObject {
         switch event {
         case .heartbeat(let battery, let online):
             if online { lastHeartbeat = .now }
-            let link: DeviceLink = online ? .dongle : snapshot.link == .bluetooth ? .bluetooth : .none
+            let link: DeviceLink = online ? wiredLink : snapshot.link == .bluetooth ? .bluetooth : .none
             let changed = (online && snapshot.battery != battery) || snapshot.link != link
             snapshot.link = link
             snapshot.connected = link != .none

@@ -29,7 +29,7 @@
 - **Mute sincronizado**: a chave do fone também muta a entrada do Mac.
 - **Biblioteca de EQ** com presets (FPS, Graves, Voz, Música, Cinema…), salvar, exportar e importar.
 - **Botões do mouse** remapeáveis e **macros de teclado** (experimental).
-- **Barra de menu configurável**: ícones e %, só ícones, só fone ou só mouse.
+- **Barra de menu configurável**: bateria em pilha, anel, barras ou número; cores monocromáticas, pelo nível, por aparelho ou verde-água; ícone do aparelho (7 desenhos cada), barbatana, siglas ou nenhum.
 
 ## ✨ O que faz
 
@@ -78,8 +78,8 @@ Em **Central de Controle › Editar Controles** aparecem: *Modo de áudio do fon
 
 ## 📥 Instalação
 
-1. Baixe o **`SharkBar.zip`** na [página de releases](../../releases/latest) e descompacte.
-2. Arraste o **SharkBar.app** para **Aplicativos**.
+1. Baixe o **`SharkBar.dmg`** na [página de releases](../../releases/latest) e abra.
+2. Arraste o **SharkBar** para a pasta **Aplicativos** na janela que aparece.
 3. Na primeira vez, o macOS vai bloquear (o app não é assinado por um desenvolvedor Apple pago).
    Libere de um destes jeitos:
    - **Ajustes do Sistema › Privacidade e Segurança** → "Abrir Mesmo Assim", ou
@@ -98,7 +98,7 @@ Precisa do Xcode (ou das Command Line Tools) — sem projeto Xcode, só `swiftc`
 
 ```bash
 ./build.sh               # compila para este Mac, instala em ~/Applications e abre
-RELEASE=1 ./build.sh     # binário universal + build/SharkBar.zip
+RELEASE=1 ./build.sh     # binário universal + instalador build/SharkBar.dmg
 ```
 
 O `build.sh` também gera os metadados de App Intents (`appintentsmetadataprocessor`), que o Xcode

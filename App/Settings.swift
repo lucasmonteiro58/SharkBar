@@ -1,17 +1,19 @@
 import Carbon.HIToolbox
 import Foundation
 
+/// Quais aparelhos aparecem na barra.
 enum MenuBarStyle: String, Codable, CaseIterable, Identifiable {
     case full, iconsOnly, headsetOnly, mouseOnly
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .full: "Ícones e porcentagens"
-        case .iconsOnly: "Só ícones"
+        case .full, .iconsOnly: "Fone e mouse"
         case .headsetOnly: "Só o fone"
         case .mouseOnly: "Só o mouse"
         }
     }
+    /// `.iconsOnly` é legado (= os dois, sem porcentagem).
+    static var choices: [MenuBarStyle] { [.full, .headsetOnly, .mouseOnly] }
 }
 
 enum HotkeyAction: String, Codable, CaseIterable, Identifiable {
@@ -35,6 +37,60 @@ struct Hotkey: Codable, Equatable {
     var display: String
 }
 
+enum BatteryStyle: String, Codable, CaseIterable, Identifiable {
+    case capsule, ring, bars, number
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .capsule: "Pilha"
+        case .ring: "Anel"
+        case .bars: "Barras"
+        case .number: "Número"
+        }
+    }
+}
+
+enum BarColorMode: String, Codable, CaseIterable, Identifiable {
+    case monochrome, byLevel, perDevice, accent
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .monochrome: "Monocromático"
+        case .byLevel: "Pelo nível"
+        case .perDevice: "Por aparelho"
+        case .accent: "Verde-água"
+        }
+    }
+}
+
+enum BarIconMode: String, Codable, CaseIterable, Identifiable {
+    case device, fin, initials, none
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .device: "Desenho do aparelho"
+        case .fin: "Barbatana"
+        case .initials: "Siglas"
+        case .none: "Sem ícone"
+        }
+    }
+}
+
+/// Aparência do item na barra de menu.
+struct MenuBarLook: Codable, Equatable {
+    var battery: BatteryStyle = .number
+    var color: BarColorMode = .monochrome
+    var icons: BarIconMode = .device
+    var headsetSymbol = "headphones"
+    var mouseSymbol = "computermouse"
+    var headsetColor = RGB(r: 64, g: 158, b: 255)
+    var mouseColor = RGB(r: 158, g: 115, b: 255)
+    var showPercent = true
+
+    static let headsetSymbols = ["headphones", "headphones.circle", "headphones.circle.fill", "airpods.max", "beats.headphones", "ear", "waveform"]
+    static let mouseSymbols = ["computermouse", "computermouse.fill", "magicmouse", "magicmouse.fill", "cursorarrow", "cursorarrow.rays", "scope"]
+}
+
 struct SettingsData: Codable, Equatable {
     var lowBatteryAlert = true
     var lowBatteryThreshold = 20
@@ -42,6 +98,12 @@ struct SettingsData: Codable, Equatable {
     var showHUD = true
     var muteSync = false
     var menuBarStyle: MenuBarStyle = .full
+    /// Opcional para continuar lendo ajustes salvos por versões anteriores.
+    var menuBarLook: MenuBarLook?
+    var look: MenuBarLook {
+        get { menuBarLook ?? MenuBarLook() }
+        set { menuBarLook = newValue }
+    }
     var perAppProfiles = true
     var hotkeys: [HotkeyAction: Hotkey] = [
         .cycleAudioMode: Hotkey(keyCode: UInt32(kVK_ANSI_A), modifiers: UInt32(controlKey | optionKey), display: "⌃⌥A"),

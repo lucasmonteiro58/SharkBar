@@ -77,8 +77,7 @@ private struct DeviceBattery: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            glyph
-                .overlay(alignment: .bottomTrailing) { badge }
+            glyphWithBadge
             if connected, showPercent, let l = level { Text("\(l)%") }
             if connected, bluetooth { Text("BT").font(.system(size: 7, weight: .heavy)) }
         }
@@ -87,36 +86,70 @@ private struct DeviceBattery: View {
 
     // MARK: Símbolo
 
+    /// O selo (raio / mic mutado) abre um recorte no símbolo antes de ser desenhado,
+    /// para nunca se misturar com as linhas — funciona também na imagem "template".
+    private var glyphWithBadge: some View {
+        let hasBadge = connected && (charging || muted)
+        return glyph
+            .overlay(alignment: .bottomTrailing) {
+                if hasBadge {
+                    Circle().frame(width: 10, height: 10)
+                        .offset(x: badgeOffset.width, y: badgeOffset.height)
+                        .blendMode(.destinationOut)
+                }
+            }
+            .compositingGroup()
+            .overlay(alignment: .bottomTrailing) {
+                if hasBadge {
+                    Image(systemName: charging ? "bolt.fill" : "mic.slash.fill")
+                        .font(.system(size: charging ? 7 : 6.5, weight: .bold))
+                        .foregroundStyle(charging ? tint : foreground)
+                        .frame(width: 10, height: 10)
+                        .offset(x: badgeOffset.width, y: badgeOffset.height)
+                }
+            }
+    }
+
+    private var badgeOffset: CGSize {
+        switch look.battery {
+        case .pill: CGSize(width: 4, height: 3)
+        default: CGSize(width: 3.5, height: 2.5)
+        }
+    }
+
     @ViewBuilder private var glyph: some View {
         switch look.battery {
         case .ring:
             ZStack {
-                Circle().stroke(foreground.opacity(template ? 0.3 : 0.25), lineWidth: 2)
+                Circle().stroke(foreground.opacity(template ? 0.3 : 0.25), lineWidth: 1.8)
                 Circle().trim(from: 0, to: fraction)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .stroke(tint, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                inner(size: 9)
+                inner(size: 7.5)
             }
-            .frame(width: 18, height: 18)
+            .frame(width: 19, height: 19)
         case .fill:
             let box = CGSize(width: 18, height: 16)
             ZStack(alignment: .bottom) {
-                inner(size: 15).opacity(template ? 0.3 : 0.35)
+                inner(size: 14).opacity(template ? 0.3 : 0.35)
                 Rectangle().fill(tint)
                     .frame(width: box.width, height: box.height * fraction)
-                    .mask(alignment: .bottom) { inner(size: 15).frame(width: box.width, height: box.height) }
+                    .mask(alignment: .bottom) { inner(size: 14).frame(width: box.width, height: box.height) }
             }
             .frame(width: box.width, height: box.height)
         case .pill:
-            ZStack(alignment: .leading) {
-                Capsule().stroke(foreground.opacity(0.55), lineWidth: 1.2)
-                // Monocromático: preenchimento translúcido, senão o ícone (mesma cor) some.
-                Capsule().fill(tint.opacity(look.color == .monochrome ? 0.35 : 0.85))
-                    .frame(width: max(5, 30 * fraction))
-                    .padding(1.5)
-                inner(size: 9).frame(maxWidth: .infinity)
+            // [ícone | barra de carga] dentro da cápsula: o ícone nunca fica sobre o preenchimento.
+            HStack(spacing: 3) {
+                inner(size: 8.5).frame(width: 11)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(foreground.opacity(template ? 0.25 : 0.2))
+                    Capsule().fill(tint).frame(width: max(2.5, 13 * fraction))
+                }
+                .frame(width: 13, height: 5)
             }
-            .frame(width: 33, height: 15)
+            .padding(.horizontal, 4)
+            .frame(height: 15)
+            .overlay(Capsule().stroke(foreground.opacity(0.5), lineWidth: 1))
         case .number:
             inner(size: 13)
         }
@@ -130,17 +163,7 @@ private struct DeviceBattery: View {
                 .font(.system(size: size, weight: .semibold))
         case .initials:
             Text(kind == .headset ? "BS" : "X6")
-                .font(.system(size: size * 0.75, weight: .heavy, design: .rounded))
-        }
-    }
-
-    /// Selo no canto: carregando (raio) ou mic mutado.
-    @ViewBuilder private var badge: some View {
-        if connected && (charging || muted) {
-            Image(systemName: charging ? "bolt.fill" : "mic.slash.fill")
-                .font(.system(size: 6.5, weight: .black))
-                .foregroundStyle(charging ? tint : foreground)
-                .offset(x: 3, y: 2)
+                .font(.system(size: size * 0.78, weight: .heavy, design: .rounded))
         }
     }
 

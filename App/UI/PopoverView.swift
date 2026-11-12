@@ -12,7 +12,7 @@ struct PopoverView: View {
             footer
         }
         .padding(12)
-        .frame(width: 360)
+        .frame(width: 400)
     }
 
     private func open(_ page: Page? = nil) {
@@ -95,7 +95,9 @@ struct HeadsetQuickCard: View {
                 if controllable {
                     HStack(spacing: 6) {
                         ForEach(AncMode.allCases) { m in
-                            OptionPill(title: m.title, symbol: m.symbol, selected: s.ancMode == m, tint: Theme.headsetTint) { h.setANC(m) }
+                            OptionPill(title: m == .off ? "Off" : m == .anc ? "ANC" : "Ambiente", symbol: m.symbol,
+                                       selected: s.ancMode == m, tint: Theme.headsetTint) { h.setANC(m) }
+                                .help(m.title)
                         }
                     }
                     if let mode = s.ancMode, mode != .off {
@@ -136,6 +138,10 @@ struct MouseQuickCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.openWindow) private var openWindow
 
+    private func groupLabel(_ t: String) -> some View {
+        Text(t.uppercased()).font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary).padding(.bottom, -4)
+    }
+
     var body: some View {
         let ms = model.mouse, m = ms.snapshot
         let controllable = ms.dongleConnected && m.link != .bluetooth
@@ -157,11 +163,10 @@ struct MouseQuickCard: View {
                 }
                 if controllable {
                     if ms.synced {
-                        HStack(spacing: 5) {
-                            ForEach(Array(ms.config.stages.enumerated()), id: \.element.id) { i, st in
-                                if st.enabled {
-                                    OptionPill(title: shortDPI(st.dpi), selected: ms.config.activeStage == i, tint: Theme.mouseTint) { ms.setStage(i) }
-                                }
+                        groupLabel("DPI")
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
+                            ForEach(Array(ms.config.stages.enumerated()).filter { $0.element.enabled }, id: \.element.id) { i, st in
+                                OptionPill(title: shortDPI(st.dpi), selected: ms.config.activeStage == i, tint: Theme.mouseTint) { ms.setStage(i) }
                             }
                         }
                     } else {
@@ -176,9 +181,10 @@ struct MouseQuickCard: View {
                             .controlSize(.small)
                         }
                     }
-                    HStack(spacing: 5) {
+                    groupLabel("Polling rate")
+                    HStack(spacing: 6) {
                         ForEach(AttackShark.pollingRates, id: \.self) { hz in
-                            OptionPill(title: hz == 1000 ? "1000 Hz" : "\(hz)", selected: ms.config.pollingHz == hz, tint: Theme.mouseTint) { ms.setPolling(hz) }
+                            OptionPill(title: "\(hz) Hz", selected: ms.config.pollingHz == hz, tint: Theme.mouseTint) { ms.setPolling(hz) }
                         }
                     }
                 }

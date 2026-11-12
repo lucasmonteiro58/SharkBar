@@ -106,7 +106,8 @@ struct OptionPill: View {
                 Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.75)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
             .background(selected ? tint : Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .foregroundStyle(selected ? Color.white : Color.primary)
             .contentShape(Rectangle())

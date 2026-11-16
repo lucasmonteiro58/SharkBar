@@ -26,6 +26,8 @@ final class HIDTransport {
     var onConnectionChange: ((Bool) -> Void)?
     /// Relatórios válidos que chegam sem ninguém esperando (ex.: botão no fone).
     var onUnsolicited: ((BlackShark.Reply) -> Void)?
+    /// O dongle avisou que o fone ligou (true) ou desligou (false).
+    var onPowerEvent: ((Bool) -> Void)?
 
     private let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
     private var device: IOHIDDevice?
@@ -35,6 +37,7 @@ final class HIDTransport {
     private var nextID = 0
     private var busy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let diag = DiagLog("headset")
 
     var isConnected: Bool { device != nil }
     var productID: Int? {
@@ -81,7 +84,19 @@ final class HIDTransport {
     }
 
     private func received(_ bytes: [UInt8]) {
-        guard let reply = BlackShark.parse(bytes) else { return }
+        if let on = BlackShark.parsePowerEvent(bytes) {
+            diag.report(Array(bytes.prefix(16)), channel: "power")
+            onPowerEvent?(on)
+            return
+        }
+        guard let reply = BlackShark.parse(bytes) else {
+            diag.report(bytes, channel: "raw") // relatórios fora do protocolo de comandos
+            return
+        }
+        // Erros e respostas sem ninguém esperando: é aí que aparece o fone desligado.
+        if reply.status != .success || pending?.command != reply.command {
+            diag.report(Array(bytes.prefix(16)), channel: String(format: "%02x", reply.command), note: "status \(reply.status.map { "\($0)" } ?? "?")")
+        }
         if let p = pending, p.command == reply.command {
             switch reply.status {
             case .success:

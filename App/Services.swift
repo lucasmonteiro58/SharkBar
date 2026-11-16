@@ -212,3 +212,43 @@ final class HotkeyCenter {
         return Hotkey(keyCode: UInt32(event.keyCode), modifiers: mods, display: text)
     }
 }
+
+/// Registro leve de relatórios HID para diagnóstico (~/Library/Logs/SharkBar/<nome>.log).
+/// Só grava quando o conteúdo muda — heartbeats repetidos não ocupam espaço — e limita o tamanho.
+@MainActor
+final class DiagLog {
+    private let url: URL
+    private var last: [String: [UInt8]] = [:]
+    private static let maxBytes = 256 * 1024
+    private static let stamp: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"; return f
+    }()
+
+    init(_ name: String) {
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/\(Brand.name)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        url = dir.appendingPathComponent("\(name).log")
+    }
+
+    /// `channel` separa tipos de relatório (ex.: "40" heartbeat) para comparar cada um com o anterior do mesmo tipo.
+    func report(_ bytes: [UInt8], channel: String, note: String = "") {
+        var trimmed = bytes
+        while trimmed.count > 8, trimmed.last == 0 { trimmed.removeLast() }
+        guard last[channel] != trimmed else { return }
+        last[channel] = trimmed
+        line(trimmed.map { String(format: "%02x", $0) }.joined(separator: " ") + (note.isEmpty ? "" : "  \(note)"))
+    }
+
+    func line(_ text: String) {
+        let entry = "\(Self.stamp.string(from: .now))  \(text)\n"
+        if let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int, size > Self.maxBytes {
+            try? FileManager.default.removeItem(at: url)
+        }
+        guard let data = entry.data(using: .utf8) else { return }
+        if let h = try? FileHandle(forWritingTo: url) {
+            h.seekToEndOfFile(); h.write(data); try? h.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+}

@@ -11,6 +11,7 @@ final class MouseController: ObservableObject {
     /// Cópia de trabalho: heartbeats e eventos escrevem aqui.
     private var state = MouseSnapshot()
     private var lastSaved = Date.distantPast
+    private let diag = DiagLog("mouse")
     @Published private(set) var dongleConnected = false
     @Published var config: MouseConfig { didSet { saveConfig() } }
     /// Falso até o primeiro envio completo: o mouse pode ter outra configuração.
@@ -127,6 +128,7 @@ final class MouseController: ObservableObject {
     }
 
     private func received(_ bytes: [UInt8]) {
+        diag.report(bytes, channel: bytes.count > 2 ? String(format: "%02x%02x", bytes[0], bytes[2]) : "?")
         guard let event = AttackShark.parse(bytes) else { return }
         switch event {
         case .heartbeat(let battery, let online):

@@ -73,6 +73,17 @@ enum BlackShark {
         return Reply(command: p[10], status: Status(rawValue: p[1]), data: Array(p[13..<(13 + n)]))
     }
 
+    /// Aviso espontâneo do dongle quando o fone liga ou desliga (botão ou desligamento automático).
+    /// Formato diferente das respostas — `[9]` = 0x00 e `[11]` = 0x02 —, visto neste dongle:
+    ///
+    ///     02 02 60 00 00 00 06 00 00 00 20 02 02 01 …   fone ligou
+    ///     02 02 60 00 00 00 06 00 00 00 20 02 02 00 …   fone desligou
+    static func parsePowerEvent(_ p: [UInt8]) -> Bool? {
+        guard p.count >= 14, p[0] == reportID, p[2] == 0x60, p[9] == 0x00, p[10] == 0x20, p[12] == 0x02
+        else { return nil }
+        return p[13] != 0
+    }
+
     /// EQ usa sinal-magnitude: 0x85 = -5 dB, 0x80 = -0 (plano).
     static func encodeGain(_ db: Int) -> UInt8 {
         let v = max(-12, min(12, db))

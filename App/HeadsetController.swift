@@ -18,6 +18,10 @@ final class HeadsetController: ObservableObject {
     /// Cópia de trabalho: as leituras escrevem aqui e `publish()` repassa se mudou.
     private var state = HeadsetSnapshot()
     private var lastSaved = Date.distantPast
+    /// Verdadeiro depois que o dongle avisou que o fone desligou (evento 0x20 `02 00`).
+    /// Enquanto isso, respostas do dongle não religam o fone — ele responde com valores antigos.
+    private var poweredOff = false
+    private let diag = DiagLog("headset-status")
     @Published private(set) var dongleConnected = false
     @Published var sidetone: Int = 0
     @Published var autoOff: Int = 15
@@ -36,12 +40,14 @@ final class HeadsetController: ObservableObject {
             guard let self else { return }
             if dongleConnected != connected { dongleConnected = connected }
             if connected {
+                self.poweredOff = false
                 Task { await self.refreshAll() }
             } else {
                 Task { await self.refreshStatus() }
             }
         }
         hid.onUnsolicited = { [weak self] reply in self?.apply(reply); self?.publish() }
+        hid.onPowerEvent = { [weak self] on in self?.powerChanged(on: on) }
         hid.start()
         CommandRouter.shared.headset = self
         pollTask = Task { [weak self] in
@@ -50,7 +56,7 @@ final class HeadsetController: ObservableObject {
                 await self?.refreshStatus()
             }
         }
-        // A chave de mute e o botão de ANC no fone não avisam sozinhos: lê a cada 2 s.
+        // A chave de mute, o botão de ANC e o liga/desliga do fone não avisam sozinhos: confere a cada 2 s.
         mutePoll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
@@ -59,15 +65,52 @@ final class HeadsetController: ObservableObject {
         }
     }
 
+    /// Fone ligou ou desligou (pelo botão ou pelo desligamento automático): atualiza na hora.
+    private func powerChanged(on: Bool) {
+        diag.line(on ? "evento: fone ligou" : "evento: fone desligou")
+        poweredOff = !on
+        if on {
+            Task {
+                // Logo após ligar o fone ainda pode não responder: tenta algumas vezes.
+                for delay in [0, 700, 1500] {
+                    if delay > 0 { try? await Task.sleep(for: .milliseconds(delay)) }
+                    guard !self.poweredOff else { return }
+                    await self.refreshAll()
+                    if self.state.connected, self.state.link != .bluetooth { return }
+                }
+            }
+        } else {
+            state.connected = false
+            state.link = DeviceLink.none
+            state.charging = false
+            state.micMuted = nil
+            publish()
+            // Pode ter ido para o Bluetooth: só o Bluetooth é conferido enquanto estiver desligado.
+            Task { await refreshStatus() }
+        }
+    }
+
+    /// Leitura rápida a cada 2 s pelo dongle.
+    /// - Ligado: lê mute e ANC; se o fone não responder, confere o status na hora
+    ///   (desligado pelo botão ou pelo desligamento automático aparece em ~2 s, não em 15 s).
+    /// - Desligado com o dongle presente: pergunta a bateria para notar quando o fone volta.
     private func pollQuick() async {
-        guard hid.isConnected, state.connected, state.link != .bluetooth, !busy else { return }
-        let before = (state.micMuted, state.ancMode, state.ancLevel)
-        for cmd: BlackShark.Command in [.micMute, .anc] {
-            if let d = try? await hid.transact(cmd.rawValue) {
+        guard hid.isConnected, !busy, !poweredOff, state.link != .bluetooth else { return }
+        guard state.connected else {
+            if (try? await hid.transact(BlackShark.Command.battery.rawValue, timeout: .milliseconds(400))) != nil {
+                await refreshAll()
+            }
+            return
+        }
+        do {
+            for cmd: BlackShark.Command in [.micMute, .anc] {
+                let d = try await hid.transact(cmd.rawValue)
                 apply(BlackShark.Reply(command: cmd.rawValue, status: .success, data: d))
             }
+            publish()
+        } catch {
+            await refreshStatus() // se falhar de novo, marca desligado e atualiza ícone/widgets
         }
-        if before != (state.micMuted, state.ancMode, state.ancLevel) { publish() }
     }
 
     // MARK: - Leitura
@@ -76,7 +119,7 @@ final class HeadsetController: ObservableObject {
     /// verifica se o fone está ligado por Bluetooth.
     func refreshStatus() async {
         var viaHID = false
-        if hid.isConnected {
+        if hid.isConnected, !poweredOff {
             do {
                 for cmd: BlackShark.Command in [.battery, .charging, .anc, .micMute] {
                     apply(BlackShark.Reply(command: cmd.rawValue, status: .success, data: try await hid.transact(cmd.rawValue)))
@@ -163,6 +206,9 @@ final class HeadsetController: ObservableObject {
         lastSaved = .now
         SharedStore.save(state, as: "headset")
         guard changed else { return }
+        if snapshot.connected != state.connected || snapshot.link != state.link {
+            diag.line("status: \(state.connected ? "ligado" : "desligado") via \(state.link?.short ?? "—")")
+        }
         snapshot = state
         WidgetCenter.shared.reloadAllTimelines()
         if #available(macOS 26.0, *) { ControlCenter.shared.reloadAllControls() }
